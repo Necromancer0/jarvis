@@ -218,3 +218,11 @@ release APK on every GitHub Release and delivers it via Telegram.
 
 MIT for the project code — see [LICENSE](LICENSE). Third-party components and model
 licenses: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+---
+
+## Project status
+
+**Completed project** — verified in the portfolio audit of **7 November 2026** (README, codebase and project state reviewed).
+
+_Last verified: 7 November 2026_
