@@ -40,6 +40,22 @@ object RiskClassifier {
         return risk
     }
 
+    /**
+     * Unattended routines may use only explicitly reviewed read-only tools.
+     * Unknown tools are denied by default.
+     */
+    private val routineAllowedTools = setOf(
+        "read_notifications",
+        "read_calendar",
+        "find_file",
+        "list_apps",
+        "read_screen",
+        "find_element",
+    )
+
+    fun isRoutineAllowed(spec: ToolSpec): Boolean =
+        spec.risk == Risk.LOW && spec.name in routineAllowedTools
+
     fun requiresConfirmation(risk: Risk, autoApproveMedium: Boolean): Boolean = when (risk) {
         Risk.LOW -> false
         Risk.MEDIUM -> !autoApproveMedium

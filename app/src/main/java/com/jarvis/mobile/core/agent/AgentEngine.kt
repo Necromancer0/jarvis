@@ -569,7 +569,7 @@ object AgentEngine {
             var planSteps = ArrayDeque<PlannedAction>()
             var planTotal = 0
             runCatching {
-                val routeNow = router.decide()
+                val routeNow = router.decide(forceLocalOnly = source == "ROUTINE")
                 if (routeNow.route != ModelRouter.Route.RULES && source != "ROUTINE" && Planner.isCompoundGoal(goal)) {
                     val compactPlan = routeNow.route == ModelRouter.Route.LOCAL && c.modelManager.isCompactPromptActive()
                     event("Compound goal - drafting a plan first…")
@@ -632,7 +632,11 @@ object AgentEngine {
                     val cur = planSteps.first()
                     "step ${planTotal - planSteps.size + 1} of $planTotal: ${cur.tool}(${cur.args.toString().take(120)})"
                 } else null
-                var decision = decide(goal, screen, history, suspicion, actionsUsed, budgetLabel, stepWarnings, afterNote, planNote)
+                var decision = decide(
+                    goal, screen, history, suspicion, actionsUsed,
+                    budgetLabel, stepWarnings, afterNote, planNote,
+                    forceLocalOnly = source == "ROUTINE",
+                )
 
                 // Small-model rescue: two consecutive unparseable outputs on the
                 // LOCAL route usually mean the tiny model cannot express an action
@@ -695,9 +699,18 @@ object AgentEngine {
 
                 // 3. SAFETY / CONFIRMATION -----------------------------------
                 val risk = RiskClassifier.classify(tool.spec, action.args, screen?.packageName)
+                if (source == "ROUTINE" &&
+                    (!RiskClassifier.isRoutineAllowed(tool.spec) ||
+                     risk != com.jarvis.mobile.core.tools.Risk.LOW)
+                ) {
+                    finalResponse = "Routine blocked: ${tool.spec.name} is not an approved read-only action."
+                    history.add(action to "BLOCKED: routine allowlist")
+                    steps.add(StepUi(steps.size + 1, action.tool, action.tool, "BLOCKED", "Routine allowlist rejected this tool"))
+                    event("Routine blocked non-allowlisted tool: ${tool.spec.name}", "warn")
+                    break
+                }
                 val autoApprove = runCatching { c.settings.autoApproveMedium.first() }.getOrDefault(false)
-                val needsConfirm = RiskClassifier.requiresConfirmation(risk, autoApprove) &&
-                    source != "ROUTINE" // routines run only LOW-risk tools anyway
+                val needsConfirm = RiskClassifier.requiresConfirmation(risk, autoApprove)
                 if (needsConfirm) {
                     event("Risky action - asking for your confirmation", "warn")
                     val approved = ConfirmationManager.request(
@@ -827,8 +840,9 @@ object AgentEngine {
         extraWarnings: List<String>,
         afterNote: String?,
         planNote: String? = null,
+        forceLocalOnly: Boolean = false,
     ): RoutedDecision {
-        val route = router.decide()
+        val route = router.decide(forceLocalOnly = forceLocalOnly)
         updateRoute(route.route.name)
         event("Route: ${route.route.name.lowercase()} (${route.reason.take(70)})")
         // COMPACT MODE for sub-1.2B local models: tiny models drown in the full
@@ -868,7 +882,7 @@ object AgentEngine {
                 val maxTokens = if (compact) 130 else 300
                 val genRef = java.util.concurrent.atomic.AtomicReference<Pair<Result<String>, ModelRouter.Decision>?>(null)
                 val genJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
-                    genRef.set(runCatching { router.generate(prompt, maxTokens, DECIDE_STOPS, decideGrammar()) }.fold(
+                    genRef.set(runCatching { router.generate(prompt, maxTokens, DECIDE_STOPS, decideGrammar(), forceLocalOnly = forceLocalOnly) }.fold(
                         onSuccess = { it },
                         onFailure = { Result.failure<String>(it) to ModelRouter.Decision(route.route, "error: ${it.message}") },
                     ))

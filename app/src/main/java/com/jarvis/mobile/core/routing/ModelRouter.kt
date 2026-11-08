@@ -19,27 +19,36 @@ class ModelRouter(
 
     data class Decision(val route: Route, val reason: String)
 
-    suspend fun decide(): Decision {
+    suspend fun decide(forceLocalOnly: Boolean = false): Decision {
         val snap = settings.snapshot()
-        // API mode (e.g. NVIDIA NIM free models) takes priority: the user
-        // explicitly turned it on, so never fall back to a slower local path
-        // or ask them to activate a local model first.
-        if (snap.apiMode) {
+        val localReady = llama.isReady()
+
+        // LOCAL ONLY and unattended routines must never use remote inference.
+        if (snap.localOnly || forceLocalOnly) {
+            return selectRoute(
+                localOnly = snap.localOnly,
+                forceLocalOnly = forceLocalOnly,
+                apiMode = snap.apiMode,
+                localReady = localReady,
+                remoteReady = false,
+            )
+        }
+
+        val checkRemote = snap.apiMode || !localReady
+        val remoteReady = if (checkRemote) {
             remote.refreshConfig()
-            if (remote.isReady()) {
-                return Decision(Route.REMOTE, "API mode: ${snap.remoteModel.ifBlank { "remote" }}")
-            }
+            remote.isReady()
+        } else {
+            false
         }
-        return when {
-            llama.isReady() -> Decision(Route.LOCAL, "on-device model: ${llama.activeModel?.id}")
-            snap.localOnly -> Decision(Route.RULES, "LOCAL ONLY mode - no cloud, model not loaded; using deterministic engine")
-            else -> {
-                remote.refreshConfig()
-                if (remote.isReady()) Decision(Route.REMOTE, "remote provider configured")
-                else if (snap.apiMode) Decision(Route.RULES, "API mode is on but no key/endpoint is set; using deterministic engine")
-                else Decision(Route.RULES, "no model loaded and no remote provider; using deterministic engine")
-            }
-        }
+
+        return selectRoute(
+            localOnly = false,
+            forceLocalOnly = false,
+            apiMode = snap.apiMode,
+            localReady = localReady,
+            remoteReady = remoteReady,
+        )
     }
 
     suspend fun generate(
@@ -47,8 +56,9 @@ class ModelRouter(
         maxTokens: Int,
         stopSequences: List<String> = emptyList(),
         grammar: String? = null,
+        forceLocalOnly: Boolean = false,
     ): Pair<Result<String>, Decision> {
-        val d = decide()
+        val d = decide(forceLocalOnly)
         return when (d.route) {
             // Grammar-constrained decoding is a local-runtime feature: the native
             // sampler owns it. Remote providers ignore it (API mode has its own
@@ -62,6 +72,45 @@ class ModelRouter(
     fun cancelLocal() = llama.cancel()
 
     companion object {
+        internal fun selectRoute(
+            localOnly: Boolean,
+            forceLocalOnly: Boolean,
+            apiMode: Boolean,
+            localReady: Boolean,
+            remoteReady: Boolean,
+        ): Decision {
+            if (localOnly || forceLocalOnly) {
+                return if (localReady) {
+                    Decision(
+                        Route.LOCAL,
+                        if (forceLocalOnly) "Routine local-only mode" else "LOCAL ONLY mode",
+                    )
+                } else {
+                    Decision(
+                        Route.RULES,
+                        "Local-only mode: no on-device model; deterministic engine only",
+                    )
+                }
+            }
+
+            if (apiMode && remoteReady) {
+                return Decision(Route.REMOTE, "API mode: remote provider")
+            }
+
+            if (localReady) {
+                return Decision(Route.LOCAL, "on-device model")
+            }
+
+            if (remoteReady) {
+                return Decision(Route.REMOTE, "remote provider configured")
+            }
+
+            return Decision(
+                Route.RULES,
+                "No usable model provider; using deterministic engine",
+            )
+        }
+
         init {
             Logx.i("router", "ModelRouter ready")
         }

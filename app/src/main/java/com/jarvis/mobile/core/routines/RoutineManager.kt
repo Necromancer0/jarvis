@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
 /**
  * Local routine engine (spec: ROUTINES / SCHEDULED AGENTS).
  * WorkManager-scheduled daily instruction runs. Routines are transparent and
- * can only execute LOW-risk tools (engine blocks confirmations in this mode).
+ * may execute only reviewed read-only tools, enforced by AgentEngine.
  */
 class RoutineManager(
     private val context: Context,
@@ -54,7 +54,7 @@ class RoutineManager(
     }
 }
 
-/** Executes one routine run. LOW-risk only; day-of-week aware. */
+/** Executes one routine run; AgentEngine enforces the read-only allowlist. */
 class RoutineWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {

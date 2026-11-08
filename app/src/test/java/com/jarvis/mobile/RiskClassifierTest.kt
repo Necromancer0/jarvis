@@ -88,6 +88,33 @@ class RiskClassifierTest {
     }
 
     @Test
+    fun `routine allowlist permits only reviewed low-risk tools`() {
+        val allowed = listOf(
+            "read_notifications", "read_calendar", "find_file",
+            "list_apps", "read_screen", "find_element"
+        )
+        allowed.forEach {
+            assertTrue("$it should be allowed in routines",
+                RiskClassifier.isRoutineAllowed(spec(it, Risk.LOW)))
+        }
+
+        val blocked = listOf(
+            "open_app", "tap", "type_text", "send_sms",
+            "whatsapp_message", "send_email", "share_content",
+            "create_calendar_event", "control_wifi"
+        )
+        blocked.forEach {
+            assertFalse("$it must be blocked in routines",
+                RiskClassifier.isRoutineAllowed(spec(it, Risk.LOW)))
+        }
+
+        assertFalse(
+            "A MEDIUM-risk tool must be blocked, even if its name is allowlisted",
+            RiskClassifier.isRoutineAllowed(spec("read_calendar", Risk.MEDIUM))
+        )
+    }
+
+    @Test
     fun `why-explanation always says something for every branch`() {
         val params = listOf(ParamSpec("text", "string", true, "x"))
         val s = ToolSpec("type_text", "t", params, Risk.MEDIUM)
