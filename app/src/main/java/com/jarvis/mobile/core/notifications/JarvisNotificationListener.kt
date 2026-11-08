@@ -31,18 +31,28 @@ class JarvisNotificationListener : NotificationListenerService() {
         val title = extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString() ?: return
         val text = extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() ?: ""
         if (title.isBlank() && text.isBlank()) return
+
+        // Never cache or forward likely OTP/verification notifications.
+        if (NotificationPrivacy.isSensitive(title, text)) {
+            Logx.i("notif", "Sensitive notification ignored")
+            return
+        }
+
+        val safeTitle = title.take(80)
+        val safeText = text.take(160)
+
         cache().add(
             NotificationCache.Item(
                 app = n.packageName ?: "?",
-                title = title.take(80),
-                text = text.take(160),
+                title = safeTitle,
+                text = safeText,
                 at = n.postTime,
             ),
         )
         // v2.0: NOTIFICATION triggers fire skills ({{title}}/{{text}} dynamics).
         runCatching {
             com.jarvis.mobile.core.triggers.TriggerEngine.onNotification(
-                JarvisApp.instance, n.packageName ?: "?", title, text,
+                JarvisApp.instance, n.packageName ?: "?", safeTitle, safeText,
             )
         }
     }

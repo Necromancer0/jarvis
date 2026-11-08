@@ -38,10 +38,8 @@ class NotificationCache {
 
     fun add(item: Item) {
         synchronized(buffer) {
-            // OTP safety: never retain verification-code style notifications.
-            if (item.text.matches(Regex(".*(code|otp|pin).*", RegexOption.IGNORE_CASE)) &&
-                item.text.matches(Regex(".*\\b\\d{4,8}\\b.*"))
-            ) return
+            // Defense in depth: never retain sensitive verification notifications.
+            if (NotificationPrivacy.isSensitive(item.title, item.text)) return
             if (buffer.size >= 40) buffer.removeFirst()
             buffer.addLast(item)
         }
