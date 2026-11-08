@@ -10,12 +10,12 @@ set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_COMMON OFF CACHE BOOL "" FORCE)
 set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
 
-# llama.cpp pinned to tag b4458 (verified API era used by llama_jni.cpp).
+# llama.cpp pinned to tag b5401 (verified API era used by llama_jni.cpp).
 # Integrity: official GitHub source tarball, hash pinned below.
 FetchContent_Declare(
     llamacpp
-    URL https://github.com/ggml-org/llama.cpp/archive/refs/tags/b4458.tar.gz
-    URL_HASH SHA256=62e698f1a34e851d448db0d85123bf6f1c3f6eec5a25e29ddc8a4a71aeda5230
+    URL https://github.com/ggml-org/llama.cpp/archive/refs/tags/b5401.tar.gz
+    URL_HASH SHA256=140f105308371c79e5a7f2f0e111481c24ff1342e44cae2bc0cedd2808d8e24c
 )
 FetchContent_MakeAvailable(llamacpp)
 

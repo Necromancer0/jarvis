@@ -35,6 +35,7 @@
 namespace {
 
 llama_model *g_model = nullptr;
+const llama_vocab *g_vocab = nullptr;
 llama_context *g_ctx = nullptr;
 std::atomic<bool> g_cancel{false};
 int g_configured_ctx = 0;
@@ -56,6 +57,7 @@ void free_all() {
         llama_model_free(g_model);
         g_model = nullptr;
     }
+    g_vocab = nullptr;
 }
 
 } // namespace
@@ -88,6 +90,14 @@ Java_com_jarvis_mobile_core_model_LlamaBridge_nativeLoadModel(
         return JNI_FALSE;
     }
 
+    g_vocab = llama_model_get_vocab(g_model);
+    if (g_vocab == nullptr) {
+        LOGE("model vocabulary unavailable");
+        llama_model_free(g_model);
+        g_model = nullptr;
+        return JNI_FALSE;
+    }
+
     llama_context_params cparams = llama_context_default_params();
     g_configured_ctx = context_size > 0 ? context_size : 2048;
     cparams.n_ctx = static_cast<uint32_t>(g_configured_ctx);
@@ -104,6 +114,7 @@ Java_com_jarvis_mobile_core_model_LlamaBridge_nativeLoadModel(
         LOGE("context init failed");
         llama_model_free(g_model);
         g_model = nullptr;
+        g_vocab = nullptr;
         return JNI_FALSE;
     }
 
@@ -211,13 +222,13 @@ Java_com_jarvis_mobile_core_model_LlamaBridge_nativeComplete(
     // Tokenize (model-era signature; parse_special=true so chat control tokens
     // embedded by the Kotlin template layer are honored).
     std::vector<llama_token> tokens(text.size() + 32);
-    int n_prompt = llama_tokenize(g_model, text.c_str(),
+    int n_prompt = llama_tokenize(g_vocab, text.c_str(),
                                   static_cast<int32_t>(text.size()),
                                   tokens.data(), static_cast<int32_t>(tokens.size()),
                                   true, true);
     if (n_prompt < 0) {
         tokens.resize(static_cast<size_t>(-n_prompt));
-        n_prompt = llama_tokenize(g_model, text.c_str(),
+        n_prompt = llama_tokenize(g_vocab, text.c_str(),
                                   static_cast<int32_t>(text.size()),
                                   tokens.data(), static_cast<int32_t>(tokens.size()),
                                   true, true);
@@ -252,7 +263,7 @@ Java_com_jarvis_mobile_core_model_LlamaBridge_nativeComplete(
     // init_grammar never aborts on a bad grammar (it degrades to pass-through),
     // but keep a null guard anyway.
     if (!grammar_str.empty()) {
-        auto *gs = llama_sampler_init_grammar(g_model, grammar_str.c_str(), "root");
+        auto *gs = llama_sampler_init_grammar(g_vocab, grammar_str.c_str(), "root");
         if (gs != nullptr) {
             llama_sampler_chain_add(smpl, gs);
             LOGI("grammar constraint active (%zu bytes)", grammar_str.size());
@@ -291,9 +302,9 @@ Java_com_jarvis_mobile_core_model_LlamaBridge_nativeComplete(
             if (llama_get_kv_cache_used_cells(g_ctx) >= n_ctx - 2) break;
 
             const llama_token sampled = llama_sampler_sample(smpl, g_ctx, -1);
-            if (llama_token_is_eog(g_model, sampled)) break;
+            if (llama_vocab_is_eog(g_vocab, sampled)) break;
 
-            const int n = llama_token_to_piece(g_model, sampled, buf, sizeof(buf), 0, true);
+            const int n = llama_token_to_piece(g_vocab, sampled, buf, sizeof(buf), 0, true);
             if (n < 0) break;
             out.append(buf, std::min(n, static_cast<int>(sizeof(buf))));
 
